@@ -409,6 +409,23 @@ class AutoScalingBackend(BaseBackend):
             instance_states.extend(group.instance_states)
         return instance_states
 
+    def detach_instances(self, group_name, instance_ids, should_decrement):
+        group = self.autoscaling_groups[group_name]
+        print(group)
+        print(group.instance_states)
+
+        for instance in group.instance_states:
+            print(instance)
+
+        self.instance_states.append(InstanceState(instance))
+
+
+        self.instance_states = self.instance_states[count_to_remove:]
+
+
+        if should_decrement:
+            self.desired_capacity =- len(instance_ids)
+
     def set_desired_capacity(self, group_name, desired_capacity):
         group = self.autoscaling_groups[group_name]
         group.set_desired_capacity(desired_capacity)
