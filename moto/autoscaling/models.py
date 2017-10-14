@@ -244,6 +244,17 @@ class FakeAutoScalingGroup(BaseModel):
         if desired_capacity is not None:
             self.set_desired_capacity(desired_capacity)
 
+    def update_instance_states(self, operation, instance_ids):
+        if operation == 'REMOVE':
+            existing_instances = []
+            for instance in self.instance_states:
+                # instance_id = str(instance.instance).split(':')[1])
+                existing_instances.append(str(instance.instance).split(':')[1])
+            self.instance_states = [InstanceState(x) for x in existing_instances if x not in instance_ids]
+            # remove asg tag
+            # self.autoscaling_backend.ec2_backend
+            # import ipdb; ipdb.set_trace()
+
     def set_desired_capacity(self, new_capacity):
         if new_capacity is None:
             self.desired_capacity = self.min_size
@@ -411,20 +422,17 @@ class AutoScalingBackend(BaseBackend):
 
     def detach_instances(self, group_name, instance_ids, should_decrement):
         group = self.autoscaling_groups[group_name]
-        print(group)
-        print(group.instance_states)
-
-        for instance in group.instance_states:
-            print(instance)
-
-        self.instance_states.append(InstanceState(instance))
-
-
-        self.instance_states = self.instance_states[count_to_remove:]
-
+        original_size = len(group.instance_states)
+        group.update_instance_states('REMOVE', instance_ids)
 
         if should_decrement:
-            self.desired_capacity =- len(instance_ids)
+            group.set_desired_capacity = original_size - len(instance_ids)
+            group.min_size = group.min_size - len(instance_ids)
+        else:
+            # launch more to replace those detached
+            print('launch more')
+
+        # self.update_attached_elbs(group_name)
 
     def set_desired_capacity(self, group_name, desired_capacity):
         group = self.autoscaling_groups[group_name]

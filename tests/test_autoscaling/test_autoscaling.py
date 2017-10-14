@@ -653,3 +653,54 @@ def test_autoscaling_describe_policies_boto3():
     response['ScalingPolicies'].should.have.length_of(1)
     response['ScalingPolicies'][0][
         'PolicyName'].should.equal('test_policy_down')
+
+@mock_autoscaling
+@mock_ec2
+def test_detach_one_instance():
+    client = boto3.client('autoscaling', region_name='us-east-1')
+    _ = client.create_launch_configuration(
+        LaunchConfigurationName='test_launch_configuration'
+    )
+    client.create_auto_scaling_group(
+        AutoScalingGroupName='test_asg',
+        LaunchConfigurationName='test_launch_configuration',
+        MinSize=0,
+        MaxSize=2,
+        DesiredCapacity=2,
+        Tags=[
+            {'ResourceId': 'test_asg',
+             'ResourceType': 'auto-scaling-group',
+             'Key': 'propogated-tag-key',
+             'Value': 'propogate-tag-value',
+             'PropagateAtLaunch': True
+             },
+            {'ResourceId': 'test_asg',
+             'ResourceType': 'auto-scaling-group',
+             'Key': 'not-propogated-tag-key',
+             'Value': 'not-propogate-tag-value',
+             'PropagateAtLaunch': False
+             }]
+    )
+    response = client.describe_auto_scaling_groups(
+        AutoScalingGroupNames=['test_asg']
+    )
+    # lets just detach the first instance
+    instance_to_remove = response['AutoScalingGroups'][0]['Instances'][0]['InstanceId']
+
+    ec2_client = boto3.client('ec2', region_name='us-east-1')
+
+    response = ec2_client.describe_instances(InstanceIds=[instance_to_remove])
+
+    print(response['Reservations'][0]['Instances'][0]['Tags'])
+
+    response = client.detach_instances(
+        AutoScalingGroupName='test_asg',
+        InstanceIds=[instance_to_remove],
+        ShouldDecrementDesiredCapacity=False
+    )
+    response['ResponseMetadata']['HTTPStatusCode'].should.equal(200)
+
+    response = client.describe_auto_scaling_groups(
+        AutoScalingGroupNames=['test_asg']
+    )
+    len(response['AutoScalingGroups'][0]['Instances']).should.equal(1)
