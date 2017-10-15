@@ -414,26 +414,37 @@ class AutoScalingBackend(BaseBackend):
 
     def detach_instances(self, group_name, instance_ids, should_decrement):
         group = self.autoscaling_groups[group_name]
-        original_size = len(group.instance_states)
 
-        existing_instances = []
-        for instance in group.instance_states:
-            existing_instances.append(str(instance.instance).split(':')[1])
-        new_state = [InstanceState(x) for x in existing_instances if x not in instance_ids]
-        group.update_instance_states(new_state)
+        original_instances = [x.instance for x in group.instance_states]
+        original_instance_count = len(original_instances)
 
-        for instance_id in instance_ids:
-            instance = group.autoscaling_backend.ec2_backend.get_instance(instance_id)
-            instance.ec2_backend.delete_tags([instance.id], ['aws:autoscaling:groupName'])
+        new_instance_state = [InstanceState(x) for x in original_instances if x.id not in instance_ids]
+        group.update_instance_states(new_instance_state)
+
+        detached_instances = [InstanceState(x) for x in original_instances if x.id in instance_ids]
+
+        for instance in detached_instances:
+            self.ec2_backend.delete_tags([instance.instance.id], ['aws:autoscaling:groupName'])
 
         if should_decrement:
-            group.set_desired_capacity = original_size - len(instance_ids)
-            group.min_size = group.min_size - len(instance_ids)
+            group.set_desired_capacity = original_instance_count - len(instance_ids)
         else:
-            # launch more to replace those detached
-            print('launch more')
+            count_needed = len(instance_ids)
+            propagated_tags = {}
+            propagated_tags[ASG_NAME_TAG] = group.name
+            reservation = group.autoscaling_backend.ec2_backend.add_instances(
+                group.launch_config.image_id,
+                count_needed,
+                group.launch_config.user_data,
+                group.launch_config.security_groups,
+                instance_type=group.launch_config.instance_type,
+                tags={'instance': propagated_tags}
+            )
+            for instance in reservation.instances:
+                instance.autoscaling_group = group
+                group.instance_states.append(InstanceState(instance))
 
-        # self.update_attached_elbs(group_name)
+        self.update_attached_elbs(group_name)
 
     def set_desired_capacity(self, group_name, desired_capacity):
         group = self.autoscaling_groups[group_name]
