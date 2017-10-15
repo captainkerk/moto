@@ -294,11 +294,9 @@ CREATE_AUTOSCALING_GROUP_TEMPLATE = """<CreateAutoScalingGroupResponse xmlns="ht
 </CreateAutoScalingGroupResponse>"""
 
 DETACH_INSTANCES_TEMPLATE = """<DetachInstancesResponse xmlns="http://autoscaling.amazonaws.com/doc/2011-01-01/">
-    <DetachInstancesResult>
-    </DetachInstancesResult>
-    <ResponseMetadata>
-        <RequestId>8d798a29-f083-11e1-bdfb-cb223EXAMPLE</RequestId>
-    </ResponseMetadata>
+<ResponseMetadata>
+<RequestId>8d798a29-f083-11e1-bdfb-cb223EXAMPLE</RequestId>
+</ResponseMetadata>
 </DetachInstancesResponse>"""
 
 DESCRIBE_AUTOSCALING_GROUPS_TEMPLATE = """<DescribeAutoScalingGroupsResponse xmlns="http://autoscaling.amazonaws.com/doc/2011-01-01/">

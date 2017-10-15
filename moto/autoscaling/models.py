@@ -244,16 +244,8 @@ class FakeAutoScalingGroup(BaseModel):
         if desired_capacity is not None:
             self.set_desired_capacity(desired_capacity)
 
-    def update_instance_states(self, operation, instance_ids):
-        if operation == 'REMOVE':
-            existing_instances = []
-            for instance in self.instance_states:
-                # instance_id = str(instance.instance).split(':')[1])
-                existing_instances.append(str(instance.instance).split(':')[1])
-            self.instance_states = [InstanceState(x) for x in existing_instances if x not in instance_ids]
-            # remove asg tag
-            # self.autoscaling_backend.ec2_backend
-            # import ipdb; ipdb.set_trace()
+    def update_instance_states(self, new_instance_states):
+        self.instance_states = new_instance_states
 
     def set_desired_capacity(self, new_capacity):
         if new_capacity is None:
@@ -423,7 +415,16 @@ class AutoScalingBackend(BaseBackend):
     def detach_instances(self, group_name, instance_ids, should_decrement):
         group = self.autoscaling_groups[group_name]
         original_size = len(group.instance_states)
-        group.update_instance_states('REMOVE', instance_ids)
+
+        existing_instances = []
+        for instance in group.instance_states:
+            existing_instances.append(str(instance.instance).split(':')[1])
+        new_state = [InstanceState(x) for x in existing_instances if x not in instance_ids]
+        group.update_instance_states(new_state)
+
+        for instance_id in instance_ids:
+            instance = group.autoscaling_backend.ec2_backend.get_instance(instance_id)
+            instance.ec2_backend.delete_tags([instance.id], ['aws:autoscaling:groupName'])
 
         if should_decrement:
             group.set_desired_capacity = original_size - len(instance_ids)

@@ -673,29 +673,21 @@ def test_detach_one_instance():
              'Key': 'propogated-tag-key',
              'Value': 'propogate-tag-value',
              'PropagateAtLaunch': True
-             },
-            {'ResourceId': 'test_asg',
-             'ResourceType': 'auto-scaling-group',
-             'Key': 'not-propogated-tag-key',
-             'Value': 'not-propogate-tag-value',
-             'PropagateAtLaunch': False
              }]
     )
     response = client.describe_auto_scaling_groups(
         AutoScalingGroupNames=['test_asg']
     )
-    # lets just detach the first instance
-    instance_to_remove = response['AutoScalingGroups'][0]['Instances'][0]['InstanceId']
+    instance_to_detach = response['AutoScalingGroups'][0]['Instances'][0]['InstanceId']
+    instance_to_keep = response['AutoScalingGroups'][0]['Instances'][1]['InstanceId']
 
     ec2_client = boto3.client('ec2', region_name='us-east-1')
 
-    response = ec2_client.describe_instances(InstanceIds=[instance_to_remove])
-
-    print(response['Reservations'][0]['Instances'][0]['Tags'])
+    response = ec2_client.describe_instances(InstanceIds=[instance_to_detach])
 
     response = client.detach_instances(
         AutoScalingGroupName='test_asg',
-        InstanceIds=[instance_to_remove],
+        InstanceIds=[instance_to_detach],
         ShouldDecrementDesiredCapacity=False
     )
     response['ResponseMetadata']['HTTPStatusCode'].should.equal(200)
@@ -704,3 +696,13 @@ def test_detach_one_instance():
         AutoScalingGroupNames=['test_asg']
     )
     len(response['AutoScalingGroups'][0]['Instances']).should.equal(1)
+
+    # test to ensure tag has been removed
+    response = ec2_client.describe_instances(InstanceIds=[instance_to_detach])
+    tags = response['Reservations'][0]['Instances'][0]['Tags']
+    len(tags).should.equal(1)
+
+    # test to ensure tag is present on other instance
+    response = ec2_client.describe_instances(InstanceIds=[instance_to_keep])
+    tags = response['Reservations'][0]['Instances'][0]['Tags']
+    len(tags).should.equal(2)
