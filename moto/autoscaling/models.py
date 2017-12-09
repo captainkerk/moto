@@ -7,7 +7,7 @@ from moto.elb import elb_backends
 from moto.elbv2 import elbv2_backends
 from moto.elb.exceptions import LoadBalancerNotFoundError
 from .exceptions import (
-    ResourceContentionError,
+    AutoscalingClientError, ResourceContentionError,
 )
 
 # http://docs.aws.amazon.com/AutoScaling/latest/DeveloperGuide/AS_Concepts.html#Cooldown
@@ -153,16 +153,21 @@ class FakeAutoScalingGroup(BaseModel):
                  default_cooldown, health_check_period, health_check_type,
                  load_balancers, target_group_arns, placement_group, termination_policies,
                  autoscaling_backend, tags):
+
+        self.availability_zones = availability_zones
+        if vpc_zone_identifier is not None:
+            self.vpc_zone_identifier = [x.lstrip() for x in vpc_zone_identifier.split(',')]
+        else:
+            self.vpc_zone_identifier = ''
+
         self.autoscaling_backend = autoscaling_backend
         self.name = name
-        self.availability_zones = availability_zones
         self.max_size = max_size
         self.min_size = min_size
 
         self.launch_config = self.autoscaling_backend.launch_configurations[
             launch_config_name]
         self.launch_config_name = launch_config_name
-        self.vpc_zone_identifier = vpc_zone_identifier
 
         self.default_cooldown = default_cooldown if default_cooldown else DEFAULT_COOLDOWN
         self.health_check_period = health_check_period
@@ -292,13 +297,15 @@ class FakeAutoScalingGroup(BaseModel):
 
     def replace_autoscaling_group_instances(self, count_needed, propagated_tags):
         propagated_tags[ASG_NAME_TAG] = self.name
+
         reservation = self.autoscaling_backend.ec2_backend.add_instances(
             self.launch_config.image_id,
             count_needed,
             self.launch_config.user_data,
             self.launch_config.security_groups,
             instance_type=self.launch_config.instance_type,
-            tags={'instance': propagated_tags}
+            tags={'instance': propagated_tags},
+            subnet_id=self.vpc_zone_identifier[0] if self.vpc_zone_identifier else None,
         )
         for instance in reservation.instances:
             instance.autoscaling_group = self
@@ -368,6 +375,7 @@ class AutoScalingBackend(BaseBackend):
 
         def make_int(value):
             return int(value) if value is not None else value
+
 
         max_size = make_int(max_size)
         min_size = make_int(min_size)

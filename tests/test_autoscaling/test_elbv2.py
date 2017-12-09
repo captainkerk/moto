@@ -12,7 +12,16 @@ def test_attach_detach_target_groups():
     elbv2_client = boto3.client('elbv2', region_name='us-east-1')
     ec2 = boto3.resource('ec2', region_name='us-east-1')
 
-    vpc = ec2.create_vpc(CidrBlock='172.28.7.0/24', InstanceTenancy='default')
+    vpc = ec2.create_vpc(CidrBlock='172.28.7.0/24')
+    subnet1 = ec2.create_subnet(
+        VpcId=vpc.id,
+        CidrBlock='172.28.7.0/26',
+        AvailabilityZone='us-east-1a')
+    subnet2 = ec2.create_subnet(
+        VpcId=vpc.id,
+        CidrBlock='172.28.7.64/26',
+        AvailabilityZone='us-east-1b')
+
 
     response = elbv2_client.create_target_group(
         Name='a-target',
@@ -40,7 +49,7 @@ def test_attach_detach_target_groups():
         MaxSize=INSTANCE_COUNT,
         DesiredCapacity=INSTANCE_COUNT,
         TargetGroupARNs=[target_group_arn],
-        VPCZoneIdentifier=vpc.id)
+        VPCZoneIdentifier='{0},{1}'.format(subnet1.id, subnet2.id))
     # create asg without attaching to target group
     client.create_auto_scaling_group(
         AutoScalingGroupName='test_asg2',
@@ -48,7 +57,7 @@ def test_attach_detach_target_groups():
         MinSize=0,
         MaxSize=INSTANCE_COUNT,
         DesiredCapacity=INSTANCE_COUNT,
-        VPCZoneIdentifier=vpc.id)
+        VPCZoneIdentifier='{0},{1}'.format(subnet1.id, subnet2.id))
 
     response = client.describe_load_balancer_target_groups(
         AutoScalingGroupName='test_asg')
@@ -83,6 +92,14 @@ def test_detach_all_target_groups():
     ec2 = boto3.resource('ec2', region_name='us-east-1')
 
     vpc = ec2.create_vpc(CidrBlock='172.28.7.0/24', InstanceTenancy='default')
+    subnet1 = ec2.create_subnet(
+        VpcId=vpc.id,
+        CidrBlock='172.28.7.0/26',
+        AvailabilityZone='us-east-1a')
+    subnet2 = ec2.create_subnet(
+        VpcId=vpc.id,
+        CidrBlock='172.28.7.64/26',
+        AvailabilityZone='us-east-1b')
 
     response = elbv2_client.create_target_group(
         Name='a-target',
@@ -109,7 +126,7 @@ def test_detach_all_target_groups():
         MaxSize=INSTANCE_COUNT,
         DesiredCapacity=INSTANCE_COUNT,
         TargetGroupARNs=[target_group_arn],
-        VPCZoneIdentifier=vpc.id)
+        VPCZoneIdentifier='{0},{1}'.format(subnet1.id, subnet2.id))
 
     response = client.describe_load_balancer_target_groups(
         AutoScalingGroupName='test_asg')

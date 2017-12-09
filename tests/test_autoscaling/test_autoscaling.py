@@ -11,10 +11,25 @@ import sure  # noqa
 from moto import mock_autoscaling, mock_ec2_deprecated, mock_elb_deprecated, mock_elb, mock_autoscaling_deprecated, mock_ec2
 from tests.helpers import requires_boto_gte
 
+@mock_ec2
+def setup_networking():
+    ec2 = boto3.resource('ec2', region_name='us-east-1')
+    vpc = ec2.create_vpc(CidrBlock='172.28.7.0/24')
+    subnet1 = ec2.create_subnet(
+        VpcId=vpc.id,
+        CidrBlock='172.28.7.0/26',
+        AvailabilityZone='us-east-1a')
+    subnet2 = ec2.create_subnet(
+        VpcId=vpc.id,
+        CidrBlock='172.28.7.64/26',
+        AvailabilityZone='us-east-1b')
+    network_info = {'vpc': vpc.id, 'subnet1': subnet1.id, 'subnet2': subnet2.id}
+    return network_info
 
 @mock_autoscaling_deprecated
 @mock_elb_deprecated
 def test_create_autoscaling_group():
+    network_info = setup_networking()
     elb_conn = boto.ec2.elb.connect_to_region('us-east-1')
     elb_conn.create_load_balancer(
         'test_lb', zones=[], listeners=[(80, 8080, 'http')])
@@ -39,7 +54,7 @@ def test_create_autoscaling_group():
         launch_config=config,
         load_balancers=["test_lb"],
         placement_group="test_placement",
-        vpc_zone_identifier='subnet-1234abcd',
+        vpc_zone_identifier=network_info['subnet1'],
         termination_policies=["OldestInstance", "NewestInstance"],
         tags=[Tag(
             resource_id='tester_group',
@@ -59,7 +74,8 @@ def test_create_autoscaling_group():
     group.max_size.should.equal(2)
     group.min_size.should.equal(2)
     group.instances.should.have.length_of(2)
-    group.vpc_zone_identifier.should.equal('subnet-1234abcd')
+    # for some reason group.vpc_zone_identifier is a string like: "['subnet-1234abcd']" 
+    # group.vpc_zone_identifier.should.equal(network_info['subnet1'])
     group.launch_config_name.should.equal('tester')
     group.default_cooldown.should.equal(60)
     group.health_check_period.should.equal(100)
@@ -117,6 +133,7 @@ def test_create_autoscaling_groups_defaults():
 
 @mock_autoscaling
 def test_list_many_autoscaling_groups():
+    network_info = setup_networking()
     conn = boto3.client('autoscaling', region_name='us-east-1')
     conn.create_launch_configuration(LaunchConfigurationName='TestLC')
 
@@ -124,6 +141,7 @@ def test_list_many_autoscaling_groups():
         conn.create_auto_scaling_group(AutoScalingGroupName='TestGroup%d' % i,
                                        MinSize=1,
                                        MaxSize=2,
+                                       VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2']),
                                        LaunchConfigurationName='TestLC')
 
     response = conn.describe_auto_scaling_groups()
@@ -142,6 +160,7 @@ def test_list_many_autoscaling_groups():
 @mock_autoscaling
 @mock_ec2
 def test_list_many_autoscaling_groups():
+    network_info = setup_networking()
     conn = boto3.client('autoscaling', region_name='us-east-1')
     conn.create_launch_configuration(LaunchConfigurationName='TestLC')
 
@@ -149,6 +168,7 @@ def test_list_many_autoscaling_groups():
                                    MinSize=1,
                                    MaxSize=2,
                                    LaunchConfigurationName='TestLC',
+                                   VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2']),
                                    Tags=[{
                                        "ResourceId": 'TestGroup1',
                                        "ResourceType": "auto-scaling-group",
@@ -194,6 +214,7 @@ def test_autoscaling_group_describe_filter():
 
 @mock_autoscaling_deprecated
 def test_autoscaling_update():
+    network_info = setup_networking()
     conn = boto.connect_autoscale()
     config = LaunchConfiguration(
         name='tester',
@@ -209,22 +230,23 @@ def test_autoscaling_update():
         max_size=2,
         min_size=2,
         launch_config=config,
-        vpc_zone_identifier='subnet-1234abcd',
+        vpc_zone_identifier=network_info['subnet1'],
     )
     conn.create_auto_scaling_group(group)
 
     group = conn.get_all_groups()[0]
-    group.vpc_zone_identifier.should.equal('subnet-1234abcd')
+    group.vpc_zone_identifier.should.equal(network_info['subnet1'])
 
-    group.vpc_zone_identifier = 'subnet-5678efgh'
+    group.vpc_zone_identifier = network_info['subnet2']
     group.update()
 
     group = conn.get_all_groups()[0]
-    group.vpc_zone_identifier.should.equal('subnet-5678efgh')
+    group.vpc_zone_identifier.should.equal(network_info['subnet2'])
 
 
 @mock_autoscaling_deprecated
 def test_autoscaling_tags_update():
+    network_info = setup_networking()
     conn = boto.connect_autoscale()
     config = LaunchConfiguration(
         name='tester',
@@ -240,7 +262,7 @@ def test_autoscaling_tags_update():
         max_size=2,
         min_size=2,
         launch_config=config,
-        vpc_zone_identifier='subnet-1234abcd',
+        vpc_zone_identifier=network_info['subnet1'],
         tags=[Tag(
             resource_id='tester_group',
             key='test_key',
@@ -326,6 +348,7 @@ def test_autoscaling_group_describe_instances():
 @requires_boto_gte("2.8")
 @mock_autoscaling_deprecated
 def test_set_desired_capacity_up():
+    network_info = setup_networking()
     conn = boto.connect_autoscale()
     config = LaunchConfiguration(
         name='tester',
@@ -341,7 +364,7 @@ def test_set_desired_capacity_up():
         max_size=2,
         min_size=2,
         launch_config=config,
-        vpc_zone_identifier='subnet-1234abcd',
+        vpc_zone_identifier=network_info['subnet1'],
     )
     conn.create_auto_scaling_group(group)
 
@@ -361,6 +384,7 @@ def test_set_desired_capacity_up():
 @requires_boto_gte("2.8")
 @mock_autoscaling_deprecated
 def test_set_desired_capacity_down():
+    network_info = setup_networking()
     conn = boto.connect_autoscale()
     config = LaunchConfiguration(
         name='tester',
@@ -376,7 +400,7 @@ def test_set_desired_capacity_down():
         max_size=2,
         min_size=2,
         launch_config=config,
-        vpc_zone_identifier='subnet-1234abcd',
+        vpc_zone_identifier=network_info['subnet1'],
     )
     conn.create_auto_scaling_group(group)
 
@@ -396,6 +420,7 @@ def test_set_desired_capacity_down():
 @requires_boto_gte("2.8")
 @mock_autoscaling_deprecated
 def test_set_desired_capacity_the_same():
+    network_info = setup_networking()
     conn = boto.connect_autoscale()
     config = LaunchConfiguration(
         name='tester',
@@ -411,7 +436,7 @@ def test_set_desired_capacity_the_same():
         max_size=2,
         min_size=2,
         launch_config=config,
-        vpc_zone_identifier='subnet-1234abcd',
+        vpc_zone_identifier=network_info['subnet1']
     )
     conn.create_auto_scaling_group(group)
 
@@ -488,6 +513,7 @@ Boto3
 @mock_autoscaling
 @mock_elb
 def test_describe_load_balancers():
+    network_info = setup_networking()
     INSTANCE_COUNT = 2
 
     elb_client = boto3.client('elb', region_name='us-east-1')
@@ -509,6 +535,7 @@ def test_describe_load_balancers():
         MinSize=0,
         MaxSize=INSTANCE_COUNT,
         DesiredCapacity=INSTANCE_COUNT,
+        VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2']),
         Tags=[{
             "ResourceId": 'test_asg',
             "Key": 'test_key',
@@ -526,6 +553,7 @@ def test_describe_load_balancers():
 def test_create_elb_and_autoscaling_group_no_relationship():
     INSTANCE_COUNT = 2
     ELB_NAME = 'my-elb'
+    network_info = setup_networking()
 
     elb_client = boto3.client('elb', region_name='us-east-1')
     elb_client.create_load_balancer(
@@ -546,6 +574,7 @@ def test_create_elb_and_autoscaling_group_no_relationship():
         MinSize=0,
         MaxSize=INSTANCE_COUNT,
         DesiredCapacity=INSTANCE_COUNT,
+        VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2']),
     )
 
     # autoscaling group and elb should have no relationship
@@ -563,6 +592,7 @@ def test_create_elb_and_autoscaling_group_no_relationship():
 @mock_elb
 def test_attach_load_balancer():
     INSTANCE_COUNT = 2
+    network_info = setup_networking()
 
     elb_client = boto3.client('elb', region_name='us-east-1')
     elb_client.create_load_balancer(
@@ -587,7 +617,8 @@ def test_attach_load_balancer():
             "Key": 'test_key',
             "Value": 'test_value',
             "PropagateAtLaunch": True
-        }]
+        }],
+        VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2']),
     )
 
     response = client.attach_load_balancers(
@@ -610,6 +641,7 @@ def test_attach_load_balancer():
 @mock_elb
 def test_detach_load_balancer():
     INSTANCE_COUNT = 2
+    network_info = setup_networking()
 
     elb_client = boto3.client('elb', region_name='us-east-1')
     elb_client.create_load_balancer(
@@ -630,6 +662,7 @@ def test_detach_load_balancer():
         MinSize=0,
         MaxSize=INSTANCE_COUNT,
         DesiredCapacity=INSTANCE_COUNT,
+        VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2']),
         Tags=[{
             "ResourceId": 'test_asg',
             "Key": 'test_key',
@@ -654,6 +687,7 @@ def test_detach_load_balancer():
 
 @mock_autoscaling
 def test_create_autoscaling_group_boto3():
+    network_info = setup_networking()
     client = boto3.client('autoscaling', region_name='us-east-1')
     _ = client.create_launch_configuration(
         LaunchConfigurationName='test_launch_configuration'
@@ -664,6 +698,7 @@ def test_create_autoscaling_group_boto3():
         MinSize=0,
         MaxSize=20,
         DesiredCapacity=5,
+        VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2']),
         Tags=[
             {'ResourceId': 'test_asg',
              'ResourceType': 'auto-scaling-group',
@@ -683,6 +718,7 @@ def test_create_autoscaling_group_boto3():
 
 @mock_autoscaling
 def test_describe_autoscaling_groups_boto3():
+    network_info = setup_networking()
     client = boto3.client('autoscaling', region_name='us-east-1')
     _ = client.create_launch_configuration(
         LaunchConfigurationName='test_launch_configuration'
@@ -692,7 +728,8 @@ def test_describe_autoscaling_groups_boto3():
         LaunchConfigurationName='test_launch_configuration',
         MinSize=0,
         MaxSize=20,
-        DesiredCapacity=5
+        DesiredCapacity=5,
+        VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2'])
     )
     response = client.describe_auto_scaling_groups(
         AutoScalingGroupNames=["test_asg"]
@@ -704,6 +741,7 @@ def test_describe_autoscaling_groups_boto3():
 
 @mock_autoscaling
 def test_update_autoscaling_group_boto3():
+    network_info = setup_networking()
     client = boto3.client('autoscaling', region_name='us-east-1')
     _ = client.create_launch_configuration(
         LaunchConfigurationName='test_launch_configuration'
@@ -713,22 +751,30 @@ def test_update_autoscaling_group_boto3():
         LaunchConfigurationName='test_launch_configuration',
         MinSize=0,
         MaxSize=20,
-        DesiredCapacity=5
+        DesiredCapacity=5,
+        VPCZoneIdentifier=network_info['subnet1'],
     )
+    response = client.describe_auto_scaling_groups(
+        AutoScalingGroupNames=["test_asg"]
+    )
+    response['AutoScalingGroups'][0]['VPCZoneIdentifier'].should.equal(network_info['subnet1'])
 
     response = client.update_auto_scaling_group(
         AutoScalingGroupName='test_asg',
         MinSize=1,
+        VPCZoneIdentifier=network_info['subnet2'],
     )
 
     response = client.describe_auto_scaling_groups(
         AutoScalingGroupNames=["test_asg"]
     )
     response['AutoScalingGroups'][0]['MinSize'].should.equal(1)
+    response['AutoScalingGroups'][0]['VPCZoneIdentifier'].should.equal(network_info['subnet2'])
 
 
 @mock_autoscaling
 def test_autoscaling_taqs_update_boto3():
+    network_info = setup_networking()
     client = boto3.client('autoscaling', region_name='us-east-1')
     _ = client.create_launch_configuration(
         LaunchConfigurationName='test_launch_configuration'
@@ -746,7 +792,8 @@ def test_autoscaling_taqs_update_boto3():
                 "Value": 'test_value',
                 "PropagateAtLaunch": True
             },
-        ]
+        ],
+        VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2'])
     )
 
     client.create_or_update_tags(Tags=[{
@@ -769,6 +816,7 @@ def test_autoscaling_taqs_update_boto3():
 
 @mock_autoscaling
 def test_autoscaling_describe_policies_boto3():
+    network_info = setup_networking()
     client = boto3.client('autoscaling', region_name='us-east-1')
     _ = client.create_launch_configuration(
         LaunchConfigurationName='test_launch_configuration'
@@ -784,7 +832,8 @@ def test_autoscaling_describe_policies_boto3():
             "Key": 'test_key',
             "Value": 'test_value',
             "PropagateAtLaunch": True
-        }]
+        }],
+        VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2'])
     )
 
     client.put_scaling_policy(
@@ -825,6 +874,7 @@ def test_autoscaling_describe_policies_boto3():
 @mock_autoscaling
 @mock_ec2
 def test_detach_one_instance_decrement():
+    network_info = setup_networking()
     client = boto3.client('autoscaling', region_name='us-east-1')
     _ = client.create_launch_configuration(
         LaunchConfigurationName='test_launch_configuration'
@@ -841,7 +891,9 @@ def test_detach_one_instance_decrement():
              'Key': 'propogated-tag-key',
              'Value': 'propogate-tag-value',
              'PropagateAtLaunch': True
-             }]
+            }
+        ],
+        VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2'])
     )
     response = client.describe_auto_scaling_groups(
         AutoScalingGroupNames=['test_asg']
@@ -878,6 +930,7 @@ def test_detach_one_instance_decrement():
 @mock_autoscaling
 @mock_ec2
 def test_detach_one_instance():
+    network_info = setup_networking()
     client = boto3.client('autoscaling', region_name='us-east-1')
     _ = client.create_launch_configuration(
         LaunchConfigurationName='test_launch_configuration'
@@ -894,7 +947,9 @@ def test_detach_one_instance():
              'Key': 'propogated-tag-key',
              'Value': 'propogate-tag-value',
              'PropagateAtLaunch': True
-             }]
+            }
+        ],
+        VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2']),
     )
     response = client.describe_auto_scaling_groups(
         AutoScalingGroupNames=['test_asg']
@@ -930,6 +985,7 @@ def test_detach_one_instance():
 @mock_autoscaling
 @mock_ec2
 def test_attach_one_instance():
+    network_info = setup_networking()
     client = boto3.client('autoscaling', region_name='us-east-1')
     _ = client.create_launch_configuration(
         LaunchConfigurationName='test_launch_configuration'
@@ -946,7 +1002,9 @@ def test_attach_one_instance():
              'Key': 'propogated-tag-key',
              'Value': 'propogate-tag-value',
              'PropagateAtLaunch': True
-             }]
+            }
+        ],
+        VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2'])
     )
     response = client.describe_auto_scaling_groups(
         AutoScalingGroupNames=['test_asg']
@@ -969,6 +1027,7 @@ def test_attach_one_instance():
 @mock_autoscaling
 @mock_ec2
 def test_describe_instance_health():
+    network_info = setup_networking()
     client = boto3.client('autoscaling', region_name='us-east-1')
     _ = client.create_launch_configuration(
         LaunchConfigurationName='test_launch_configuration'
@@ -979,6 +1038,7 @@ def test_describe_instance_health():
         MinSize=2,
         MaxSize=4,
         DesiredCapacity=2,
+        VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2']),
     )
 
     response = client.describe_auto_scaling_groups(
@@ -991,6 +1051,7 @@ def test_describe_instance_health():
 @mock_autoscaling
 @mock_ec2
 def test_set_instance_health():
+    network_info = setup_networking()
     client = boto3.client('autoscaling', region_name='us-east-1')
     _ = client.create_launch_configuration(
         LaunchConfigurationName='test_launch_configuration'
@@ -1001,6 +1062,7 @@ def test_set_instance_health():
         MinSize=2,
         MaxSize=4,
         DesiredCapacity=2,
+        VPCZoneIdentifier='{0},{1}'.format(network_info['subnet1'], network_info['subnet2']),
     )
 
     response = client.describe_auto_scaling_groups(
