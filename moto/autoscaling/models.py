@@ -154,11 +154,13 @@ class FakeAutoScalingGroup(BaseModel):
                  load_balancers, target_group_arns, placement_group, termination_policies,
                  autoscaling_backend, tags):
 
+        if not availability_zones and not vpc_zone_identifier:
+            raise AutoscalingClientError(
+                "ValidationError",
+                "At least one Availability Zone or VPC Subnet is required."
+            )
         self.availability_zones = availability_zones
-        if vpc_zone_identifier is not None:
-            self.vpc_zone_identifier = [x.lstrip() for x in vpc_zone_identifier.split(',')]
-        else:
-            self.vpc_zone_identifier = ''
+        self.vpc_zone_identifier = vpc_zone_identifier
 
         self.autoscaling_backend = autoscaling_backend
         self.name = name
@@ -297,19 +299,34 @@ class FakeAutoScalingGroup(BaseModel):
 
     def replace_autoscaling_group_instances(self, count_needed, propagated_tags):
         propagated_tags[ASG_NAME_TAG] = self.name
+        if self.vpc_zone_identifier:
+            subnets = [x.lstrip() for x in self.vpc_zone_identifier.split(',')]
 
-        reservation = self.autoscaling_backend.ec2_backend.add_instances(
-            self.launch_config.image_id,
-            count_needed,
-            self.launch_config.user_data,
-            self.launch_config.security_groups,
-            instance_type=self.launch_config.instance_type,
-            tags={'instance': propagated_tags},
-            subnet_id=self.vpc_zone_identifier[0] if self.vpc_zone_identifier else None,
-        )
-        for instance in reservation.instances:
-            instance.autoscaling_group = self
-            self.instance_states.append(InstanceState(instance))
+            for i in range(0, count_needed):
+                reservation = self.autoscaling_backend.ec2_backend.add_instances(
+                    self.launch_config.image_id,
+                    1,
+                    self.launch_config.user_data,
+                    self.launch_config.security_groups,
+                    instance_type=self.launch_config.instance_type,
+                    tags={'instance': propagated_tags},
+                    subnet_id=subnets[i % len(subnets)],
+                )
+                for instance in reservation.instances:
+                    instance.autoscaling_group = self
+                    self.instance_states.append(InstanceState(instance))
+        else:
+            reservation = self.autoscaling_backend.ec2_backend.add_instances(
+                self.launch_config.image_id,
+                count_needed,
+                self.launch_config.user_data,
+                self.launch_config.security_groups,
+                instance_type=self.launch_config.instance_type,
+                tags={'instance': propagated_tags},
+            )
+            for instance in reservation.instances:
+                instance.autoscaling_group = self
+                self.instance_states.append(InstanceState(instance))
 
     def append_target_groups(self, target_group_arns):
         append = [x for x in target_group_arns if x not in self.target_group_arns]

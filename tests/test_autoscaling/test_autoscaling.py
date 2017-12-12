@@ -74,8 +74,7 @@ def test_create_autoscaling_group():
     group.max_size.should.equal(2)
     group.min_size.should.equal(2)
     group.instances.should.have.length_of(2)
-    # for some reason group.vpc_zone_identifier is a string like: "['subnet-1234abcd']" 
-    # group.vpc_zone_identifier.should.equal(network_info['subnet1'])
+    group.vpc_zone_identifier.should.equal(network_info['subnet1'])
     group.launch_config_name.should.equal('tester')
     group.default_cooldown.should.equal(60)
     group.health_check_period.should.equal(100)
@@ -96,6 +95,7 @@ def test_create_autoscaling_group():
 def test_create_autoscaling_groups_defaults():
     """ Test with the minimum inputs and check that all of the proper defaults
     are assigned for the other attributes """
+    network_info = setup_networking()
     conn = boto.connect_autoscale()
     config = LaunchConfiguration(
         name='tester',
@@ -109,6 +109,7 @@ def test_create_autoscaling_groups_defaults():
         max_size=2,
         min_size=2,
         launch_config=config,
+        vpc_zone_identifier=network_info['subnet1']
     )
     conn.create_auto_scaling_group(group)
 
@@ -187,6 +188,7 @@ def test_list_many_autoscaling_groups():
 
 @mock_autoscaling_deprecated
 def test_autoscaling_group_describe_filter():
+    network_info = setup_networking()
     conn = boto.connect_autoscale()
     config = LaunchConfiguration(
         name='tester',
@@ -200,6 +202,7 @@ def test_autoscaling_group_describe_filter():
         max_size=2,
         min_size=2,
         launch_config=config,
+        vpc_zone_identifier=network_info['subnet1']
     )
     conn.create_auto_scaling_group(group)
     group.name = 'tester_group2'
@@ -289,6 +292,7 @@ def test_autoscaling_tags_update():
 
 @mock_autoscaling_deprecated
 def test_autoscaling_group_delete():
+    network_info = setup_networking()
     conn = boto.connect_autoscale()
     config = LaunchConfiguration(
         name='tester',
@@ -302,6 +306,7 @@ def test_autoscaling_group_delete():
         max_size=2,
         min_size=2,
         launch_config=config,
+        vpc_zone_identifier=network_info['subnet1']
     )
     conn.create_auto_scaling_group(group)
 
@@ -314,6 +319,7 @@ def test_autoscaling_group_delete():
 @mock_ec2_deprecated
 @mock_autoscaling_deprecated
 def test_autoscaling_group_describe_instances():
+    network_info = setup_networking()
     conn = boto.connect_autoscale()
     config = LaunchConfiguration(
         name='tester',
@@ -327,6 +333,7 @@ def test_autoscaling_group_describe_instances():
         max_size=2,
         min_size=2,
         launch_config=config,
+        vpc_zone_identifier=network_info['subnet1']
     )
     conn.create_auto_scaling_group(group)
 
@@ -456,6 +463,7 @@ def test_set_desired_capacity_the_same():
 @mock_autoscaling_deprecated
 @mock_elb_deprecated
 def test_autoscaling_group_with_elb():
+    network_info = setup_networking()
     elb_conn = boto.connect_elb()
     zones = ['us-east-1a', 'us-east-1b']
     ports = [(80, 8080, 'http'), (443, 8443, 'tcp')]
@@ -476,6 +484,7 @@ def test_autoscaling_group_with_elb():
         min_size=2,
         launch_config=config,
         load_balancers=["my-lb"],
+        vpc_zone_identifier=network_info['subnet1']
     )
     conn.create_auto_scaling_group(group)
     group = conn.get_all_groups()[0]
