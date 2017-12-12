@@ -292,17 +292,28 @@ class FakeAutoScalingGroup(BaseModel):
 
     def replace_autoscaling_group_instances(self, count_needed, propagated_tags):
         propagated_tags[ASG_NAME_TAG] = self.name
+        if self.vpc_zone_identifier:
+            subnets = [x.lstrip() for x in self.vpc_zone_identifier.split(',')]
+            for i in range(0, count_needed):
+                subnet = subnets[i % len(subnets)]
+                self.add_instance(subnet, propagated_tags)
+        else:
+            for i in range(0, count_needed):
+                self.add_instance(None, propagated_tags)
+
+    def add_instance(self, subnet, propagated_tags):
         reservation = self.autoscaling_backend.ec2_backend.add_instances(
             self.launch_config.image_id,
-            count_needed,
+            1,
             self.launch_config.user_data,
             self.launch_config.security_groups,
             instance_type=self.launch_config.instance_type,
+            subnet=subnet,
             tags={'instance': propagated_tags}
         )
-        for instance in reservation.instances:
-            instance.autoscaling_group = self
-            self.instance_states.append(InstanceState(instance))
+        instance = reservation.instances[0]
+        instance.autoscaling_group = self
+        self.instance_states.append(InstanceState(instance))
 
     def append_target_groups(self, target_group_arns):
         append = [x for x in target_group_arns if x not in self.target_group_arns]
