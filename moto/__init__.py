@@ -9,6 +9,7 @@ from .acm import mock_acm  # flake8: noqa
 from .apigateway import mock_apigateway, mock_apigateway_deprecated  # flake8: noqa
 from .autoscaling import mock_autoscaling, mock_autoscaling_deprecated  # flake8: noqa
 from .awslambda import mock_lambda, mock_lambda_deprecated  # flake8: noqa
+from .codebuild import mock_codebuild  # flake8: noqa
 from .cloudformation import mock_cloudformation, mock_cloudformation_deprecated  # flake8: noqa
 from .cloudwatch import mock_cloudwatch, mock_cloudwatch_deprecated  # flake8: noqa
 from .cognitoidentity import mock_cognitoidentity, mock_cognitoidentity_deprecated  # flake8: noqa
